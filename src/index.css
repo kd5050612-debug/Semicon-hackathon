@@ -1,0 +1,393 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-bg-primary: #1a1a1f;
+  --color-bg-secondary: #22222a;
+  --color-bg-card: #2a2a34;
+  --color-bg-card-hover: #32323e;
+  --color-border: #3a3a48;
+  --color-border-subtle: #2e2e3a;
+  --color-accent-blue: #4a8fff;
+  --color-accent-green: #00d97e;
+  --color-accent-orange: #ff8c42;
+  --color-accent-red: #ff4d4d;
+  --color-text-primary: #f0f0f5;
+  --color-text-secondary: #8888a0;
+  --color-text-muted: #555568;
+--font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --font-display: 'Poppins', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, serif;
+
+  /* ===== Custom tokens from the Inspection Results / Quality Reports design ===== */
+  /* Colors */
+  --color-primary: #adc6ff;
+  --color-inverse-surface: #e5e1e4;
+  --color-secondary-fixed: #6ffbbe;
+  --color-on-background: #e5e1e4;
+  --color-error: #ffb4ab;
+  --color-surface-bright: #39393b;
+  --color-primary-fixed: #d8e2ff;
+  --color-error-container: #93000a;
+  --color-surface: #131315;
+  --color-primary-container: #4d8eff;
+  --color-surface-dim: #131315;
+  --color-background: #131315;
+  --color-surface-tint: #adc6ff;
+  --color-inverse-on-surface: #313032;
+  --color-tertiary: #ffb786;
+  --color-on-secondary-container: #00311f;
+  --color-on-primary-fixed-variant: #004395;
+  --color-on-error: #690005;
+  --color-tertiary-fixed-dim: #ffb786;
+  --color-on-secondary-fixed: #002113;
+  --color-on-primary: #002e6a;
+  --color-surface-variant: #353437;
+  --color-on-secondary: #003824;
+  --color-on-tertiary-fixed-variant: #723600;
+  --color-on-primary-container: #00285d;
+  --color-surface-container: #201f22;
+  --color-surface-container-high: #2a2a2c;
+  --color-on-surface: #e5e1e4;
+  --color-secondary-container: #00a572;
+  --color-tertiary-fixed: #ffdcc6;
+  --color-tertiary-container: #df7412;
+  --color-surface-container-low: #1c1b1d;
+  --color-on-tertiary: #502400;
+  --color-on-tertiary-fixed: #311400;
+  --color-on-surface-variant: #c2c6d6;
+  --color-surface-container-highest: #353437;
+  --color-primary-fixed-dim: #adc6ff;
+  --color-on-primary-fixed: #001a42;
+  --color-outline: #8c909f;
+  --color-outline-variant: #424754;
+  --color-surface-container-lowest: #0e0e10;
+  --color-on-tertiary-container: #461f00;
+  --color-secondary: #4edea3;
+  --color-on-error-container: #ffdad6;
+  --color-inverse-primary: #005ac2;
+  --color-on-secondary-fixed-variant: #005236;
+
+/* Radius */
+  --radius: 1rem;
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.5rem;
+  --radius-full: 0.75rem;
+
+  /* Spacing */
+  --spacing-margin-mobile: 16px;
+  --spacing-margin-desktop: 40px;
+  --spacing-unit: 4px;
+  --spacing-gutter: 24px;
+  --spacing-panel-gap: 12px;
+
+  /* Font family */
+  --font-display-lg: 'Geist', sans-serif;
+  --font-headline-lg: 'Geist', sans-serif;
+  --font-headline-md: 'Geist', sans-serif;
+  --font-body-md: 'Geist', sans-serif;
+  --font-label-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --font-body-lg: 'Geist', sans-serif;
+  --font-headline-lg-mobile: 'Geist', sans-serif;
+
+  /* Font sizes */
+  --text-display-lg: 48px;
+  --text-display-lg--line-height: 56px;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 600;
+  --text-headline-lg: 32px;
+  --text-headline-lg--line-height: 40px;
+  --text-headline-lg--letter-spacing: -0.02em;
+  --text-headline-lg--font-weight: 600;
+  --text-headline-md: 24px;
+  --text-headline-md--line-height: 32px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 500;
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--font-weight: 400;
+  --text-label-mono: 12px;
+  --text-label-mono--line-height: 16px;
+  --text-label-mono--letter-spacing: 0.05em;
+  --text-label-mono--font-weight: 500;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--font-weight: 400;
+  --text-headline-lg-mobile: 28px;
+  --text-headline-lg-mobile--line-height: 36px;
+  --text-headline-lg-mobile--font-weight: 600;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #1a1a1f;
+  color: #f0f0f5;
+  font-family: 'Poppins', 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: 'Poppins', system-ui, sans-serif;
+}
+
+.font-serif {
+  font-family: 'Source Serif 4', Georgia, serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+/* Material Symbols Outlined */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: #22222a;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3a48;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a5a;
+}
+
+/* Animated gradient progress bars */
+@keyframes progress-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.8); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes wave {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+/* Drag drop zone */
+.drop-zone-active {
+  border-color: #4a8fff !important;
+  background-color: rgba(74, 143, 255, 0.05) !important;
+}
+
+/* ============================================================
+   BLoom Liquid Glass Morphism
+   ============================================================ */
+@layer components {
+  /* Light liquid glass */
+  .liquid-glass {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.01);
+    background-blend-mode: luminosity;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: none;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  }
+
+  .liquid-glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.4px;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.45) 0%,
+      rgba(255, 255, 255, 0.15) 20%,
+      transparent 40%,
+      transparent 60%,
+      rgba(255, 255, 255, 0.15) 80%,
+      rgba(255, 255, 255, 0.45) 100%
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* Strong liquid glass (heavy, for CTA/panels) */
+  .liquid-glass-strong {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.01);
+    background-blend-mode: luminosity;
+    backdrop-filter: blur(50px);
+    -webkit-backdrop-filter: blur(50px);
+    border: none;
+    box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  }
+
+  .liquid-glass-strong::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.4px;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.2) 20%,
+      transparent 40%,
+      transparent 60%,
+      rgba(255, 255, 255, 0.2) 80%,
+      rgba(255, 255, 255, 0.5) 100%
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+/* ============================================================
+   Icon / text animations
+   ============================================================ */
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes fade-in-up {
+  0% { opacity: 0; transform: translateY(24px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.35)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.7)); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-float {
+  animation: float-y 5s ease-in-out infinite;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.8s ease-out both;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+.animate-icon-spin {
+  animation: spin-slow 8s linear infinite;
+}
+
+/* ============================================================
+   Modern Custom Cursor
+   ============================================================ */
+@media (pointer: fine) {
+  /* Hide the native cursor on fine-pointer devices */
+  body,
+  body * {
+    cursor: none !important;
+  }
+}
+
+/* Outer trailing ring */
+.custom-cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid rgba(74, 143, 255, 0.7);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 99999;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: width 0.25s ease, height 0.25s ease, border-color 0.25s ease,
+    background-color 0.25s ease;
+  mix-blend-mode: screen;
+}
+
+/* Inner dot */
+.custom-cursor-dot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  background: #4a8fff;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 99999;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  mix-blend-mode: screen;
+}
+
+/* Hover state over interactive elements */
+.custom-cursor-ring.cursor-ring-hover {
+  width: 56px;
+  height: 56px;
+  border-color: rgba(0, 217, 126, 0.9);
+  background-color: rgba(0, 217, 126, 0.08);
+}
+
+/* Pressed state */
+.custom-cursor-ring.cursor-ring-active {
+  transform: translate(-50%, -50%) scale(0.8);
+  border-color: rgba(255, 140, 66, 0.9);
+}
+
+.custom-cursor-dot.cursor-dot-active {
+  transform: translate(-50%, -50%) scale(1.6);
+}
+
+/* Hide custom cursor on touch / small-screen devices */
+@media (pointer: coarse) {
+  .custom-cursor-ring,
+  .custom-cursor-dot {
+    display: none !important;
+  }
+}

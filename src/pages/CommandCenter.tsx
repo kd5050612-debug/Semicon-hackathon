@@ -1,7 +1,9 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
-import { PlusCircle, ArrowUpRight, ArrowDownRight, Cpu, CheckCircle2, Clock, Activity, Wifi } from 'lucide-react';
+import { PlusCircle, ArrowUpRight, ArrowDownRight, Cpu, CheckCircle2, Clock, Activity } from 'lucide-react';
 import { buildAgentReports, getInspectionRecords, subscribeToInspectionRecords, type InspectionRecord } from '@/lib/inspectionStore';
 import type { Page } from '@/types';
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 interface CommandCenterProps {
   onNavigate: (page: Page) => void;
@@ -24,11 +26,20 @@ const formatRelativeTime = (isoDate: string) => {
 export default function CommandCenter({ onNavigate }: CommandCenterProps) {
   const [split, setSplit] = useState(60);
   const [records, setRecords] = useState<InspectionRecord[]>(() => getInspectionRecords());
+  const [backendHealth, setBackendHealth] = useState<{ ok: boolean; model_loaded: boolean; device?: string; error?: string } | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
 
   const latestInspection = useMemo(() => records[0] ?? undefined, [records]);
   const agentReports = useMemo(() => buildAgentReports(latestInspection), [latestInspection]);
+  const modelVersion = latestInspection?.model ?? 'SRCNN_Baseline.pth';
+  const lastCalibration = latestInspection
+    ? new Date(latestInspection.createdAt).toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'UTC',
+      }) + ' UTC'
+    : 'N/A';
 
   const summaryMetrics = useMemo(() => {
     const totalRestorations = records.length || 1;
@@ -80,7 +91,66 @@ export default function CommandCenter({ onNavigate }: CommandCenterProps) {
     ];
   }, [records]);
 
+  const performanceMetrics = useMemo(() => {
+    const reviewQueue = records.filter((record) => record.status === 'Review').length;
+    const oldestDate = records.at(-1)?.createdAt ? new Date(records.at(-1)!.createdAt).getTime() : Date.now();
+    const hoursElapsed = Math.max(1, (Date.now() - oldestDate) / (1000 * 60 * 60));
+    const throughput = records.length ? records.length / hoursElapsed : 0;
+    const computeMode = backendHealth?.device?.toLowerCase().includes('cuda') ? 'CUDA' : backendHealth ? 'CPU' : 'N/A';
+
+    return [
+      { label: 'Throughput', value: `${throughput.toFixed(1)} img/hr`, trend: records.length ? `${records.length} scans` : 'No scans' },
+      { label: 'Compute Mode', value: computeMode, trend: backendHealth?.ok ? 'online' : 'offline' },
+      { label: 'Review Queue', value: `${reviewQueue}`, trend: reviewQueue > 0 ? 'needs review' : 'clear' },
+      { label: 'System', value: backendHealth?.ok ? 'Online' : 'Offline', trend: backendHealth?.device ?? 'n/a' },
+    ];
+  }, [backendHealth, records]);
+
   useEffect(() => subscribeToInspectionRecords(() => setRecords(getInspectionRecords())), []);
+
+  useEffect(() => {
+    const loadHealth = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/health`);
+        if (!response.ok) {
+          setBackendHealth({ ok: false, model_loaded: false, error: 'Health check failed' });
+          return;
+        }
+
+        const data = await response.json();
+        setBackendHealth({
+          ok: Boolean(data.ok),
+          model_loaded: Boolean(data.model_loaded),
+          device: typeof data.device === 'string' ? data.device : undefined,
+          error: typeof data.error === 'string' ? data.error : undefined,
+        });
+      } catch {
+        setBackendHealth({ ok: false, model_loaded: false, error: 'Backend unavailable' });
+      }
+    };
+
+    loadHealth();
+  }, []);
+
+  const hardwareCard = useMemo(() => {
+    if (!backendHealth) {
+      return { value: 'Checking', delta: 'Connecting...', deltaDir: 'up' as const };
+    }
+
+    if (backendHealth.ok && backendHealth.model_loaded) {
+      return {
+        value: 'Optimal',
+        delta: backendHealth.device ? backendHealth.device : 'Model online',
+        deltaDir: 'up' as const,
+      };
+    }
+
+    return {
+      value: 'Offline',
+      delta: backendHealth.error ?? 'Backend unavailable',
+      deltaDir: 'down' as const,
+    };
+  }, [backendHealth]);
 
   const handleSplitDrag = (clientX: number) => {
     const el = viewerRef.current;
@@ -127,7 +197,7 @@ export default function CommandCenter({ onNavigate }: CommandCenterProps) {
           { label: 'Total Restorations', value: `${summaryMetrics.totalRestorations}`.replace(/\B(?=(\d{3})+(?!\d))/g, ','), delta: '+12%', deltaDir: 'up', icon: Cpu, iconColor: 'text-[#4a8fff]', iconBg: 'bg-[#4a8fff]/10' },
           { label: 'Avg Confidence', value: `${summaryMetrics.avgConfidence.toFixed(1)}%`, delta: '+0.8%', deltaDir: 'up', icon: CheckCircle2, iconColor: 'text-[#00d97e]', iconBg: 'bg-[#00d97e]/10' },
           { label: 'Avg Inference Time', value: `${Math.round(summaryMetrics.avgInference)}ms`, delta: '-23ms', deltaDir: 'down', icon: Clock, iconColor: 'text-[#ff8c42]', iconBg: 'bg-[#ff8c42]/10' },
-          { label: 'Hardware Status', value: 'Optimal', delta: 'All systems', deltaDir: 'up', icon: Activity, iconColor: 'text-[#8888a0]', iconBg: 'bg-[#8888a0]/10' },
+          { label: 'Hardware Status', value: hardwareCard.value, delta: hardwareCard.delta, deltaDir: hardwareCard.deltaDir, icon: Activity, iconColor: 'text-[#8888a0]', iconBg: 'bg-[#8888a0]/10' },
         ].map((s) => {
           const DeltaIcon = s.deltaDir === 'up' ? ArrowUpRight : ArrowDownRight;
           return (
@@ -272,11 +342,11 @@ export default function CommandCenter({ onNavigate }: CommandCenterProps) {
           <div className="mt-6 pt-5 border-t border-[#3a3a48]">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[12px] text-[#8888a0]">Model version</span>
-              <span className="text-[12px] font-mono text-[#e0e0ea]">Semantic v3.2.1</span>
+              <span className="text-[12px] font-mono text-[#e0e0ea]">{modelVersion}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-[12px] text-[#8888a0]">Last calibration</span>
-              <span className="text-[12px] font-mono text-[#e0e0ea]">14:32 UTC</span>
+              <span className="text-[12px] font-mono text-[#e0e0ea]">{lastCalibration}</span>
             </div>
           </div>
         </div>
@@ -414,20 +484,15 @@ export default function CommandCenter({ onNavigate }: CommandCenterProps) {
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-[15px] font-semibold text-[#f0f0f5]">Performance Metrics</h2>
-            <p className="text-[12px] text-[#8888a0] mt-0.5">Last 30 days</p>
+            <p className="text-[12px] text-[#8888a0] mt-0.5">Live data from the active inspection stream</p>
           </div>
           <div className="flex items-center gap-2 text-[11px] font-mono text-[#8888a0]">
-            <Wifi size={13} className="text-[#00d97e]" />
-            REAL-TIME
+            <span className="w-2 h-2 rounded-full bg-[#00d97e] animate-pulse-dot" />
+            LIVE
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: 'Throughput', value: '342 img/hr', trend: '+18%' },
-            { label: 'GPU Utilization', value: '67%', trend: 'Nominal' },
-            { label: 'Queue Depth', value: '3', trend: 'Low' },
-            { label: 'Uptime', value: '99.97%', trend: '30d' },
-          ].map((m) => (
+          {performanceMetrics.map((m) => (
             <div key={m.label} className="bg-[#22222a] border border-[#2e2e3a] rounded-lg p-4">
               <p className="text-[20px] font-semibold text-[#f0f0f5]">{m.value}</p>
               <p className="text-[12px] text-[#8888a0] mt-0.5">{m.label}</p>

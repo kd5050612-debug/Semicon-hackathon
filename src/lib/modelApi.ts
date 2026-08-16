@@ -32,12 +32,7 @@ export type RestoreBatchResponse = {
   results: Array<RestoreResult | RestoreErrorResult>;
 };
 
-// Production backend on Render.
-// VITE_API_BASE_URL can override this for local development or another deployment.
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ||
-  'https://semicon-hackathon.onrender.com'
-).replace(/\/$/, '');
+const API_BASE_URL = 'https://semicon-hackathon.onrender.com';
 
 export async function restoreBatch(
   files: File[],
@@ -51,26 +46,37 @@ export async function restoreBatch(
 
   formData.append('scan_mode', scanMode);
 
-  const response = await fetch(`${API_BASE_URL}/api/restore-batch`, {
-    method: 'POST',
-    body: formData,
-  });
+  const url = `${API_BASE_URL}/api/restore-batch`;
 
-  if (!response.ok) {
-    let message = `Backend request failed (${response.status})`;
+  console.log('Calling backend:', url);
 
-    try {
-      const data = await response.json();
-      message =
-        typeof data.detail === 'string'
-          ? data.detail
-          : message;
-    } catch {
-      message = response.statusText || message;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    console.log('Backend response:', response.status);
+
+    if (!response.ok) {
+      let message = `Backend request failed (${response.status})`;
+
+      try {
+        const data = await response.json();
+
+        if (typeof data.detail === 'string') {
+          message = data.detail;
+        }
+      } catch {
+        message = response.statusText || message;
+      }
+
+      throw new Error(message);
     }
 
-    throw new Error(message);
+    return await response.json();
+  } catch (error) {
+    console.error('Backend request error:', error);
+    throw error;
   }
-
-  return response.json();
 }

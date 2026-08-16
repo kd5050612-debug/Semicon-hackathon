@@ -4,6 +4,7 @@ import base64
 import io
 import os
 import time
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Annotated
@@ -17,34 +18,73 @@ from torch import nn
 
 
 # ============================================================
-# PROJECT / MODEL CONFIGURATION
+# LOGGING
+# ============================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
+
+logger = logging.getLogger("sem-srcnn")
+
+
+# ============================================================
+# PROJECT CONFIGURATION
 # ============================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_MODEL_PATH = (
-    PROJECT_ROOT / "Model_backend" / "SRCNN_Baseline.pth"
+    PROJECT_ROOT
+    / "Model_backend"
+    / "SRCNN_Baseline.pth"
 )
 
 MODEL_PATH = Path(
-    os.getenv("SRCNN_MODEL_PATH", DEFAULT_MODEL_PATH)
+    os.getenv("SRCNN_MODEL_PATH", str(DEFAULT_MODEL_PATH))
 ).resolve()
 
+
+# ============================================================
+# RENDER-FRIENDLY LIMITS
+# ============================================================
+
+# Keep this small for CPU-based Render instances.
 MAX_BATCH_SIZE = int(
-    os.getenv("MAX_BATCH_SIZE", "8")
+    os.getenv("MAX_BATCH_SIZE", "2")
 )
 
+# Smaller dimensions reduce memory usage dramatically.
 SCAN_MODE_MAX_DIMENSIONS = {
     "rapid": int(
-        os.getenv("RAPID_MAX_INPUT_DIM", "384")
+        os.getenv("RAPID_MAX_INPUT_DIM", "256")
     ),
     "standard": int(
-        os.getenv("STANDARD_MAX_INPUT_DIM", "512")
+        os.getenv("STANDARD_MAX_INPUT_DIM", "320")
     ),
     "deep": int(
-        os.getenv("DEEP_MAX_INPUT_DIM", "768")
+        os.getenv("DEEP_MAX_INPUT_DIM", "384")
     ),
 }
+
+
+# ============================================================
+# PYTORCH CPU CONFIGURATION
+# ============================================================
+
+# Avoid excessive CPU thread usage on small cloud instances.
+try:
+    torch.set_num_threads(
+        int(os.getenv("TORCH_NUM_THREADS", "1"))
+    )
+except Exception:
+    pass
+
+try:
+    torch.set_num_interop_threads(1)
+except Exception:
+    pass
 
 
 # ============================================================
@@ -52,6 +92,7 @@ SCAN_MODE_MAX_DIMENSIONS = {
 # ============================================================
 
 class SRCNN(nn.Module):
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -82,14 +123,28 @@ class SRCNN(nn.Module):
             padding=2,
         )
 
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(
+            inplace=True
+        )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+    ) -> torch.Tensor:
+
         x = self.upsample(x)
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
 
-        return self.conv3(x)
+        x = self.relu(
+            self.conv1(x)
+        )
+
+        x = self.relu(
+            self.conv2(x)
+        )
+
+        x = self.conv3(x)
+
+        return x
 
 
 # ============================================================
@@ -97,7 +152,16 @@ class SRCNN(nn.Module):
 # ============================================================
 
 class ModelService:
-    def __init__(self, model_path: Path) -> None:
+
+    def __init__(
+        self,
+        model_path: Path,
+    ) -> None:
+
+        logger.info(
+            "Loading model from: %s",
+            model_path,
+        )
 
         if not model_path.exists():
             raise FileNotFoundError(
@@ -106,89 +170,158 @@ class ModelService:
 
         self.model_path = model_path
 
-        self.device = torch.device(
-            "cuda"
-            if torch.cuda.is_available()
-            else "cpu"
+        # Render deployment is expected to use CPU.
+        self.device = torch.device("cpu")
+
+        logger.info(
+            "Using device: %s",
+            self.device,
         )
 
-        self.model = SRCNN().to(self.device)
+        self.model = SRCNN().to(
+            self.device
+        )
 
         checkpoint = torch.load(
             model_path,
             map_location=self.device,
         )
 
-        state_dict = self._extract_state_dict(
-            checkpoint
+        state_dict = (
+            self._extract_state_dict(
+                checkpoint
+            )
         )
 
-        self.model.load_state_dict(state_dict)
+        self.model.load_state_dict(
+            state_dict
+        )
 
         self.model.eval()
+
+        logger.info(
+            "SRCNN model loaded successfully."
+        )
 
     @staticmethod
     def _extract_state_dict(
         checkpoint: Any,
     ) -> dict[str, torch.Tensor]:
 
-        if not isinstance(checkpoint, dict):
+        if not isinstance(
+            checkpoint,
+            dict,
+        ):
             raise ValueError(
                 "Unsupported model checkpoint format."
             )
 
         if "model_state_dict" in checkpoint:
+
             checkpoint = checkpoint[
                 "model_state_dict"
             ]
 
         elif "state_dict" in checkpoint:
+
             checkpoint = checkpoint[
                 "state_dict"
             ]
 
-        return {
-            key.removeprefix("module."): value
-            for key, value in checkpoint.items()
-            if isinstance(value, torch.Tensor)
-        }
+        state_dict = {}
+
+        for key, value in checkpoint.items():
+
+            if isinstance(
+                value,
+                torch.Tensor,
+            ):
+
+                clean_key = key.removeprefix(
+                    "module."
+                )
+
+                state_dict[
+                    clean_key
+                ] = value
+
+        if not state_dict:
+            raise ValueError(
+                "No model weights found in checkpoint."
+            )
+
+        return state_dict
 
     def restore(
         self,
         source: np.ndarray,
     ) -> np.ndarray:
 
+        height, width = source.shape
+
+        logger.info(
+            "Starting inference: %sx%s",
+            width,
+            height,
+        )
+
         tensor = (
-            torch.from_numpy(source)
+            torch.from_numpy(
+                source
+            )
             .unsqueeze(0)
             .unsqueeze(0)
+            .float()
             .to(self.device)
         )
 
-        with torch.inference_mode():
+        try:
+
+            with torch.inference_mode():
+
+                restored = self.model(
+                    tensor
+                )
 
             restored = (
-                self.model(tensor)
+                restored
                 .squeeze(0)
                 .squeeze(0)
                 .cpu()
                 .numpy()
             )
 
-        return np.clip(
+        finally:
+
+            del tensor
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        restored = np.clip(
             restored,
             0.0,
             1.0,
         )
 
+        logger.info(
+            "Inference completed: output=%s",
+            restored.shape,
+        )
+
+        return restored
+
 
 # ============================================================
-# MODEL LOADING
+# MODEL CACHE
 # ============================================================
 
 @lru_cache(maxsize=1)
 def get_model_service() -> ModelService:
-    return ModelService(MODEL_PATH)
+
+    return ModelService(
+        MODEL_PATH
+    )
 
 
 # ============================================================
@@ -198,43 +331,42 @@ def get_model_service() -> ModelService:
 app = FastAPI(
     title="SEM SRCNN Restoration API",
     version="1.0.0",
-    description=(
-        "Backend API for semiconductor image "
-        "restoration using SRCNN."
-    ),
 )
 
 
 # ============================================================
-# CORS CONFIGURATION
+# CORS
 # ============================================================
-
-# Production frontend
-FRONTEND_URL = (
-    "https://semiconductor-restorer.vercel.app"
-)
-
-# Local development frontend URLs
-LOCAL_FRONTEND_URLS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
 
 app.add_middleware(
     CORSMiddleware,
+
     allow_origins=[
         "https://semiconductor-restorer.vercel.app",
+
+        # Local development
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
+
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+
+    allow_methods=[
+        "*"
+    ],
+
+    allow_headers=[
+        "*"
+    ],
+
+    expose_headers=[
+        "*"
+    ],
 )
+
 
 # ============================================================
 # IMAGE NORMALIZATION
@@ -248,28 +380,39 @@ def normalize_array(
 
     array = np.squeeze(array)
 
+    # Handle RGB/RGBA/etc.
     if array.ndim == 3:
 
-        if array.shape[0] in (1, 3, 4):
+        if array.shape[0] in (
+            1,
+            3,
+            4,
+        ):
+
             array = np.moveaxis(
                 array,
                 0,
                 -1,
             )
 
-        array = (
-            array[..., :3]
-            .mean(axis=-1)
+        array = array[
+            ...,
+            :3
+        ].mean(
+            axis=-1
         )
 
     if array.ndim != 2:
+
         raise ValueError(
             "Expected a 2D grayscale image "
             "or a 3D image array."
         )
 
     array = np.nan_to_num(
-        array.astype(np.float32),
+        array.astype(
+            np.float32
+        ),
         nan=0.0,
         posinf=0.0,
         neginf=0.0,
@@ -283,32 +426,39 @@ def normalize_array(
         array.max()
     )
 
+    # Already normalized.
     if (
         max_value <= 1.0
         and min_value >= 0.0
     ):
+
         return np.clip(
             array,
             0.0,
             1.0,
         )
 
+    # Standard 8-bit image.
     if (
         max_value <= 255.0
         and min_value >= 0.0
     ):
+
         return np.clip(
             array / 255.0,
             0.0,
             1.0,
         )
 
+    # Constant image.
     if max_value == min_value:
+
         return np.zeros_like(
             array,
             dtype=np.float32,
         )
 
+    # General normalization.
     return np.clip(
         (
             array - min_value
@@ -322,7 +472,7 @@ def normalize_array(
 
 
 # ============================================================
-# READ UPLOADED FILE
+# READ UPLOAD
 # ============================================================
 
 def read_upload_to_array(
@@ -336,9 +486,9 @@ def read_upload_to_array(
         .lower()
     )
 
-    # ------------------------------------------
-    # NumPy .npy files
-    # ------------------------------------------
+    # ------------------------------------
+    # NumPy input
+    # ------------------------------------
 
     if suffix == ".npy":
 
@@ -362,9 +512,9 @@ def read_upload_to_array(
             loaded
         )
 
-    # ------------------------------------------
-    # Image files
-    # ------------------------------------------
+    # ------------------------------------
+    # Image input
+    # ------------------------------------
 
     try:
 
@@ -376,7 +526,9 @@ def read_upload_to_array(
             image
         )
 
-        image = image.convert("L")
+        image = image.convert(
+            "L"
+        )
 
     except UnidentifiedImageError as exc:
 
@@ -385,6 +537,15 @@ def read_upload_to_array(
             detail=(
                 "Upload must be an image "
                 "or .npy file."
+            ),
+        ) from exc
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unable to read image: {exc}"
             ),
         ) from exc
 
@@ -401,13 +562,19 @@ def max_dimension_for_scan_mode(
     scan_mode: str,
 ) -> int:
 
+    mode = scan_mode.lower()
+
     return SCAN_MODE_MAX_DIMENSIONS.get(
-        scan_mode.lower(),
+        mode,
         SCAN_MODE_MAX_DIMENSIONS[
             "standard"
         ],
     )
 
+
+# ============================================================
+# RESIZE INPUT
+# ============================================================
 
 def resize_for_scan_mode(
     source: np.ndarray,
@@ -424,14 +591,16 @@ def resize_for_scan_mode(
         )
     )
 
-    height, width = source.shape
+    height, width = (
+        source.shape
+    )
 
     largest_side = max(
         height,
         width,
     )
 
-    # No resizing required
+    # No resize needed.
     if largest_side <= max_dimension:
 
         return (
@@ -445,15 +614,26 @@ def resize_for_scan_mode(
         / largest_side
     )
 
-    target_size = (
-        max(
-            1,
-            round(width * scale),
+    target_width = max(
+        1,
+        round(
+            width * scale
         ),
-        max(
-            1,
-            round(height * scale),
+    )
+
+    target_height = max(
+        1,
+        round(
+            height * scale
         ),
+    )
+
+    logger.info(
+        "Resizing input %sx%s -> %sx%s",
+        width,
+        height,
+        target_width,
+        target_height,
     )
 
     image = Image.fromarray(
@@ -466,12 +646,17 @@ def resize_for_scan_mode(
             * 255.0
         )
         .round()
-        .astype(np.uint8),
+        .astype(
+            np.uint8
+        ),
         mode="L",
     )
 
     resized = image.resize(
-        target_size,
+        (
+            target_width,
+            target_height,
+        ),
         Image.Resampling.BICUBIC,
     )
 
@@ -485,7 +670,7 @@ def resize_for_scan_mode(
 
 
 # ============================================================
-# CONVERT ARRAY TO PNG DATA URL
+# ARRAY -> PNG DATA URL
 # ============================================================
 
 def array_to_png_data_url(
@@ -500,10 +685,13 @@ def array_to_png_data_url(
 
     image = Image.fromarray(
         (
-            normalized * 255.0
+            normalized
+            * 255.0
         )
         .round()
-        .astype(np.uint8),
+        .astype(
+            np.uint8
+        ),
         mode="L",
     )
 
@@ -512,11 +700,14 @@ def array_to_png_data_url(
     image.save(
         buffer,
         format="PNG",
+        optimize=True,
     )
 
     encoded = base64.b64encode(
         buffer.getvalue()
-    ).decode("ascii")
+    ).decode(
+        "ascii"
+    )
 
     return (
         "data:image/png;base64,"
@@ -525,13 +716,28 @@ def array_to_png_data_url(
 
 
 # ============================================================
-# RESTORE SINGLE IMAGE
+# SINGLE RESTORATION
 # ============================================================
 
 async def restore_upload(
     upload: UploadFile,
     scan_mode: str,
 ) -> dict[str, Any]:
+
+    filename = (
+        upload.filename
+        or "uploaded-image"
+    )
+
+    logger.info(
+        "Processing upload: %s | mode=%s",
+        filename,
+        scan_mode,
+    )
+
+    # ------------------------------------
+    # Read upload
+    # ------------------------------------
 
     content = await upload.read()
 
@@ -540,49 +746,122 @@ async def restore_upload(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"{upload.filename or 'File'} "
-                "is empty."
+                f"{filename} is empty."
             ),
         )
 
-    filename = (
-        upload.filename
-        or "uploaded-image"
+    logger.info(
+        "Upload size: %.2f KB",
+        len(content) / 1024,
     )
 
-    source = read_upload_to_array(
-        filename,
-        content,
-    )
+    # ------------------------------------
+    # Convert image
+    # ------------------------------------
+
+    try:
+
+        source = read_upload_to_array(
+            filename,
+            content,
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+
+        logger.exception(
+            "Image conversion failed."
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unable to process "
+                f"{filename}: {exc}"
+            ),
+        ) from exc
 
     original_shape = list(
         source.shape
     )
 
-    (
-        source,
-        resized_for_speed,
-        max_input_dimension,
-    ) = resize_for_scan_mode(
-        source,
-        scan_mode,
+    # ------------------------------------
+    # Resize
+    # ------------------------------------
+
+    source, resized_for_speed, max_input_dimension = (
+        resize_for_scan_mode(
+            source,
+            scan_mode,
+        )
     )
 
-    # Load model
-    model_service = (
-        get_model_service()
-    )
+    # ------------------------------------
+    # Model
+    # ------------------------------------
 
-    # Measure inference time
+    try:
+
+        model_service = (
+            get_model_service()
+        )
+
+    except Exception as exc:
+
+        logger.exception(
+            "Model loading failed."
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Model loading failed: {exc}"
+            ),
+        ) from exc
+
+    # ------------------------------------
+    # Inference
+    # ------------------------------------
+
     inference_start = (
         time.perf_counter()
     )
 
-    restored = (
-        model_service.restore(
-            source
+    try:
+
+        restored = (
+            model_service.restore(
+                source
+            )
         )
-    )
+
+    except RuntimeError as exc:
+
+        logger.exception(
+            "PyTorch inference failed."
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Model inference failed: {exc}"
+            ),
+        ) from exc
+
+    except Exception as exc:
+
+        logger.exception(
+            "Inference failed."
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Inference failed: {exc}"
+            ),
+        ) from exc
 
     inference_ms = round(
         (
@@ -592,6 +871,15 @@ async def restore_upload(
         * 1000.0,
         1,
     )
+
+    logger.info(
+        "Inference finished: %s ms",
+        inference_ms,
+    )
+
+    # ------------------------------------
+    # Response
+    # ------------------------------------
 
     return {
         "filename": filename,
@@ -620,9 +908,7 @@ async def restore_upload(
             )
         ),
 
-        "original_shape": (
-            original_shape
-        ),
+        "original_shape": original_shape,
 
         "input_shape": list(
             source.shape
@@ -648,15 +934,12 @@ async def restore_upload(
             "input_min": float(
                 source.min()
             ),
-
             "input_max": float(
                 source.max()
             ),
-
             "output_min": float(
                 restored.min()
             ),
-
             "output_max": float(
                 restored.max()
             ),
@@ -665,7 +948,7 @@ async def restore_upload(
 
 
 # ============================================================
-# ROOT ENDPOINT
+# ROOT
 # ============================================================
 
 @app.get("/")
@@ -680,7 +963,7 @@ def root() -> dict[str, str]:
 
 
 # ============================================================
-# HEALTH CHECK
+# HEALTH
 # ============================================================
 
 @app.get("/api/health")
@@ -694,35 +977,39 @@ def health() -> dict[str, Any]:
 
     except Exception as exc:
 
+        logger.exception(
+            "Health check: model unavailable."
+        )
+
         return {
             "ok": False,
-
             "model_loaded": False,
-
             "model_path": str(
                 MODEL_PATH
             ),
-
             "error": str(exc),
         }
 
     return {
         "ok": True,
-
         "model_loaded": True,
-
         "model_path": str(
             model_service.model_path
         ),
-
         "device": str(
             model_service.device
+        ),
+        "scan_limits": (
+            SCAN_MODE_MAX_DIMENSIONS
+        ),
+        "max_batch_size": (
+            MAX_BATCH_SIZE
         ),
     }
 
 
 # ============================================================
-# SINGLE IMAGE RESTORATION
+# SINGLE RESTORE
 # ============================================================
 
 @app.post("/api/restore")
@@ -731,12 +1018,17 @@ async def restore_single(
         UploadFile,
         File(...),
     ],
-
     scan_mode: Annotated[
         str,
         Form(),
     ] = "standard",
 ) -> dict[str, Any]:
+
+    logger.info(
+        "POST /api/restore | file=%s | mode=%s",
+        file.filename,
+        scan_mode,
+    )
 
     return await restore_upload(
         file,
@@ -745,7 +1037,7 @@ async def restore_single(
 
 
 # ============================================================
-# BATCH IMAGE RESTORATION
+# BATCH RESTORE
 # ============================================================
 
 @app.post("/api/restore-batch")
@@ -754,12 +1046,18 @@ async def restore_batch(
         list[UploadFile],
         File(...),
     ],
-
     scan_mode: Annotated[
         str,
         Form(),
     ] = "standard",
 ) -> dict[str, Any]:
+
+    logger.info(
+        "POST /api/restore-batch | "
+        "files=%s | mode=%s",
+        len(files),
+        scan_mode,
+    )
 
     if not files:
 
@@ -777,7 +1075,7 @@ async def restore_batch(
             detail=(
                 f"Upload up to "
                 f"{MAX_BATCH_SIZE} "
-                "files per request."
+                f"files per request."
             ),
         )
 
@@ -785,18 +1083,36 @@ async def restore_batch(
         dict[str, Any]
     ] = []
 
-    for upload in files:
+    for index, upload in enumerate(
+        files,
+        start=1,
+    ):
+
+        logger.info(
+            "Processing batch item %s/%s: %s",
+            index,
+            len(files),
+            upload.filename,
+        )
 
         try:
 
+            result = await restore_upload(
+                upload,
+                scan_mode,
+            )
+
             results.append(
-                await restore_upload(
-                    upload,
-                    scan_mode,
-                )
+                result
             )
 
         except HTTPException as exc:
+
+            logger.error(
+                "File failed: %s | %s",
+                upload.filename,
+                exc.detail,
+            )
 
             results.append(
                 {
@@ -804,15 +1120,35 @@ async def restore_batch(
                         upload.filename
                         or "uploaded-file"
                     ),
-
-                    "error": exc.detail,
+                    "error": str(
+                        exc.detail
+                    ),
                 }
             )
 
+        except Exception as exc:
+
+            logger.exception(
+                "Unexpected batch error."
+            )
+
+            results.append(
+                {
+                    "filename": (
+                        upload.filename
+                        or "uploaded-file"
+                    ),
+                    "error": str(exc),
+                }
+            )
+
+    logger.info(
+        "Batch completed: %s files",
+        len(results),
+    )
+
     return {
         "scan_mode": scan_mode,
-
         "count": len(results),
-
         "results": results,
     }

@@ -32,11 +32,23 @@ export type RestoreBatchResponse = {
   results: Array<RestoreResult | RestoreErrorResult>;
 };
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
+// Production backend on Render.
+// VITE_API_BASE_URL can override this for local development or another deployment.
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  'https://semicon-hackathon.onrender.com'
+).replace(/\/$/, '');
 
-export async function restoreBatch(files: File[], scanMode: ScanMode): Promise<RestoreBatchResponse> {
+export async function restoreBatch(
+  files: File[],
+  scanMode: ScanMode
+): Promise<RestoreBatchResponse> {
   const formData = new FormData();
-  files.forEach((file) => formData.append('files', file));
+
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+
   formData.append('scan_mode', scanMode);
 
   const response = await fetch(`${API_BASE_URL}/api/restore-batch`, {
@@ -46,12 +58,17 @@ export async function restoreBatch(files: File[], scanMode: ScanMode): Promise<R
 
   if (!response.ok) {
     let message = `Backend request failed (${response.status})`;
+
     try {
       const data = await response.json();
-      message = typeof data.detail === 'string' ? data.detail : message;
+      message =
+        typeof data.detail === 'string'
+          ? data.detail
+          : message;
     } catch {
       message = response.statusText || message;
     }
+
     throw new Error(message);
   }
 
